@@ -7,3 +7,7 @@ Used to create a table matching an SVN revision ID with a GIT hash.
 convertTracTickets.php
 =======================
 Converts all references to SVN changesets in TRAC tickets to GIT changesets. Be sure to run "trac-admin YourTracProject resync" after running this script.
+
+hooks
+=====
+Contains some usefull hooks for working with git on track

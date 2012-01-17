@@ -68,8 +68,9 @@ import re
 from subprocess import Popen, PIPE
 from datetime import datetime
 from operator import itemgetter
+import trac
 
-TRAC_ENV = '/home/dev/trac/core'
+TRAC_ENV = '/home/jens/tractest/'
 GIT_PATH = '/usr/bin/git'
 BRANCHES = ['master']
 COMMANDS = {'close':      intern('close'),
@@ -84,11 +85,7 @@ COMMANDS = {'close':      intern('close'),
             'refs':       intern('refs'),
             'see':        intern('refs')}
 
-ADD_HOURS = False
-ADD_HOUR_COMMANDS = { 
-		'worked':	intern('worked'),
-		'add work':	intern('worked'),
-		}
+ADD_HOURS = True
 
 # Use the egg cache of the environment if not other python egg cache is given.
 if not 'PYTHON_EGG_CACHE' in os.environ:
@@ -103,9 +100,92 @@ ticket_command =  (r'(?P<action>[A-Za-z]*).?'
                    (ticket_reference, ticket_reference))
 command_re = re.compile(ticket_command)
 ticket_re = re.compile(ticket_prefix + '([0-9]+)')
+hours_re = re.compile("worked\s*(?P<hours>[0-9.]+)h")
+
 
 def call_git(command, args):
+
     return Popen([GIT_PATH, command] + args, stdout=PIPE).communicate()[0]
+
+
+#found in http://trac-hacks.org/browser/timingandestimationplugin/branches/trac0.11/timingandestimationplugin/ticket_daemon.py
+def convertfloat(x):
+	"some european countries use , as the decimal separator"
+ 	x = str(x).strip()
+	#print "converting: %s" % x
+ 	if len(x) > 0:
+ 	    return float(x.replace(',','.'))
+ 	else:
+ 	    return 0.0
+
+def readTicketValue(name, tipe, ticket, env,default=0):
+    if ticket.values.has_key(name):
+        return tipe(ticket.values[name] or default)
+    else:
+        cursor = env.get_db_cnx().cursor()
+ 	cursor.execute("SELECT * FROM ticket_custom where ticket=%s and name=%s" , (ticket.id, name))
+ 	val = cursor.fetchone()
+ 	if val:
+ 	    return tipe(val[2] or default)
+ 	return default
+
+
+try:
+    import trac.util.datefmt
+    to_timestamp = trac.util.datefmt.to_timestamp
+except Exception:
+    to_timestamp = identity
+
+
+def save_custom_field_value( db, ticket_id, field, value ):
+    cursor = db.cursor();
+    cursor.execute("SELECT * FROM ticket_custom "
+                   "WHERE ticket=%s and name=%s", (ticket_id, field))
+    if cursor.fetchone():
+        cursor.execute("UPDATE ticket_custom SET value=%s "
+                       "WHERE ticket=%s AND name=%s",
+                       (value, ticket_id, field))
+    else:
+        cursor.execute("INSERT INTO ticket_custom (ticket,name, "
+                       "value) VALUES(%s,%s,%s)",
+                       (ticket_id, field, value))
+    db.commit()
+
+DONTUPDATE = "DONTUPDATE"
+
+def save_ticket_change( db, ticket_id, author, change_time, field, oldvalue, newvalue, dontinsert=False):
+    """tries to save a ticket change,
+
+       dontinsert means do not add the change if it didnt already exist
+    """
+    if isinstance(change_time,datetime):
+        change_time = to_timestamp(change_time)
+    #print "change_time: %s" % change_time
+    cursor = db.cursor();
+    sql = """SELECT * FROM ticket_change
+             WHERE ticket=%s and author=%s and time=%s and field=%s"""
+
+    cursor.execute(sql, (ticket_id, author, change_time, field))
+    if cursor.fetchone():
+        if oldvalue == DONTUPDATE:
+            cursor.execute("""UPDATE ticket_change  SET  newvalue=%s
+                       WHERE ticket=%s and author=%s and time=%s and field=%s""",
+                           ( newvalue, ticket_id, author, change_time, field))
+
+        else:
+            cursor.execute("""UPDATE ticket_change  SET oldvalue=%s, newvalue=%s
+                       WHERE ticket=%s and author=%s and time=%s and field=%s""",
+                           (oldvalue, newvalue, ticket_id, author, change_time, field))
+    else:
+        if oldvalue == DONTUPDATE:
+            oldvalue = '0'
+        if not dontinsert:
+            cursor.execute("""INSERT INTO ticket_change  (ticket,time,author,field, oldvalue, newvalue)
+                        VALUES(%s, %s, %s, %s, %s, %s)""",
+                           (ticket_id, change_time, author, field, oldvalue, newvalue))
+    db.commit()
+
+# end found
 
 def handle_commit(commit, env):
     from trac.ticket.notification import TicketNotifyEmail
@@ -117,10 +197,12 @@ def handle_commit(commit, env):
     msg = to_unicode(call_git('rev-list', ['-n', '1', commit, '--pretty=medium']).rstrip())
     eml = to_unicode(call_git('rev-list', ['-n', '1', commit, '--pretty=format:%ae']).splitlines()[1])
     now = datetime.now(utc)
+    content = msg.split('\n\n', 1)[1]
 
     tickets = {}
-    for cmd, tkts in command_re.findall(msg.split('\n\n', 1)[1]):
+    for cmd, tkts in command_re.findall(content):
         action = COMMANDS.get(cmd.lower())
+	#print "action: %s " % action
         if action:
             for tkt_id in ticket_re.findall(tkts):
                 tickets.setdefault(tkt_id, []).append(action)
@@ -129,11 +211,41 @@ def handle_commit(commit, env):
         try:
             db = env.get_db_cnx()
             ticket = Ticket(env, int(tkt_id), db)
+	    #print "ticket: %s" % ticket
+    	    if ADD_HOURS:
+ 		#print "message: %s" % content
+		hours = hours_re.findall(content)
+		if hours:
+			#ADD hours to ticket
+			hours =  float(hours[0])/len(tickets)
+			#code from http://trac-hacks.org/browser/timingandestimationplugin/branches/trac0.11/timingandestimationplugin/ticket_daemon.py
+			#print "hours: %s" % hours
+			totalHours = readTicketValue("totalhours", convertfloat,ticket,env)
+			#print "totalhours: %s" % totalHours
+			newtotal = str(totalHours+hours)
+			#print "newtotal: %s" % newtotal
+			cl = ticket.get_changelog()
+			if cl:
+				#print "cl: %s" % cl
+				most_recent_change = cl[-1]
+				change_time  = most_recent_change[0]
+				#print "changetime: %s" % change_time
+				author = most_recent_change[1]
+			else:
+				change_time = ticket.time_created
+				author = ticket.values["reporter"]
+			db =  env.get_db_cnx()
+			#print "saving changes"
+			save_ticket_change( db, tkt_id, author, change_time, "hours", '0.0', str(hours) )
+			save_ticket_change( db, tkt_id, author, change_time, "totalhours", str(totalHours), str(newtotal))
+			save_custom_field_value( db, tkt_id, "hours", '0')	
+			save_custom_field_value( db, tkt_id, "totalhours", str(newtotal) )
+			#print "hour changes saved"
 
             if 'close' in actions:
                 ticket['status'] = 'closed'
                 ticket['resolution'] = 'fixed'
-
+	
             # determine sequence number...
             cnum = 0
             tm = TicketModule(env)
@@ -147,7 +259,7 @@ def handle_commit(commit, env):
             tn = TicketNotifyEmail(env)
             tn.notify(ticket, newticket=0, modtime=now)
         except Exception, e:
-            print >>sys.stderr, 'Unexpected error while processing ticket ID %s: %s' % (tkt_id, e)
+            print 'Unexpected error while processing commit %s, for ticket ID %s: %s %s' % (commit, tkt_id, e.__class__,e)
 
 def handle_ref(old, new, ref, env):
     # If something else than the master branch (or whatever is contained by the
@@ -189,7 +301,7 @@ def handle_ref(old, new, ref, env):
         try:
              handle_commit(commit, env)
         except Exception, e:
-             print >>sys.stderr, 'Unexpected error while processing commit %s: %s' % (commit[:7], e)
+             print 'Unexpected error while processing commit %s: %s' % (commit[:7], e)
              db.rollback()
         else:
              db.commit()
@@ -200,3 +312,4 @@ if __name__ == '__main__':
 
     for line in sys.stdin:
         handle_ref(env=env, *line.split())
+
