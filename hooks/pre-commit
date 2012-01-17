@@ -1,0 +1,10 @@
+#!/bin/sh
+#
+# This script checks if a ticket number is present in the commitmessage.
+if ! egrep 'refs #[0-9]+|closes #[0-9]+' "$1" > /dev/null
+then
+        echo "" 1>&2
+        echo "*** Your commit has been blocked because you give an invalid commit comment." 1>&2
+        echo "Please make your commit comment contains 'refs' or 'closes' followed by a #ticketnumber." 1>&2
+        exit 1
+fi
