@@ -1,0 +1,11 @@
+#!/bin/sh
+while read rev_old rev_new ref
+do
+    MALFORMED="$(git rev-list --oneline $rev_old..$rev_new | egrep -v '#[0-9]+' |  awk '{print $1}' )"
+    if [ x"$MALFORMED" != x ]
+    then
+        echo Invallid commit message on $MALFORMED
+        exit 1
+    fi
+done
+
