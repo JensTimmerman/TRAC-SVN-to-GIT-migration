@@ -121,7 +121,7 @@ foreach ($result as $row)
 {
 	if (convertSVNIDToGitID($row['description'], $lookupTable, $nrHashCharacters))
 	{	
-		$query = $db->prepare("UPDATE ticket_change SET description=? WHERE id = ?");
+		$query = $db->prepare("UPDATE ticket SET description=? WHERE id = ?");
 		$query->bindParam(1, $row['description']);
 		$query->bindParam(2, $row['id']);
 
