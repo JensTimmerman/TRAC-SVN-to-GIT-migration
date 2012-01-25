@@ -4,6 +4,7 @@
 # ----------------------------------------------------------------------------
 # Copyright (c) 2004 Stephen Hansen
 # Copyright (c) 2009 Sebastian Noack
+# Copyright (c) 2012 Jens Timmerman
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to
@@ -56,11 +57,14 @@
 #   references, refs, addresses, re, see
 #     The specified issue numbers are left in their current status, but
 #     the contents of this commit message are added to their notes.
+#   worked [0-9.]+h
+#     The specified amount of hours get added to the ticket. When more then
+#     one ticket specified, the hours are equally distributed across the ticket.
 #
 # A fairly complicated example of what you can do is with a commit message
 # of:
 #
-#    Changed blah and foo to do this or that. Fixes #10 and #12, and refs #12.
+#    Changed blah and foo to do this or that. Fixes #10 and #12, and refs #12. worked 10.2h
 
 import sys
 import os
@@ -85,7 +89,7 @@ COMMANDS = {'close':      intern('close'),
             'refs':       intern('refs'),
             'see':        intern('refs')}
 
-ADD_HOURS = True
+ADD_HOURS = False
 
 # Use the egg cache of the environment if not other python egg cache is given.
 if not 'PYTHON_EGG_CACHE' in os.environ:
