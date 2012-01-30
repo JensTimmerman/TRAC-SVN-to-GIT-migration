@@ -130,7 +130,8 @@ foreach ($result as $row)
 			echo "Query failed: " . $query . "\n";
 		}
 
-		echo "Updated ticket $i\n";
+		echo "Updated ticket " . $row['id']. "\n";
+
 	}
 }
 
