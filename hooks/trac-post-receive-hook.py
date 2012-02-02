@@ -73,6 +73,7 @@ from subprocess import Popen, PIPE
 from datetime import datetime
 from operator import itemgetter
 import trac
+import time
 
 TRAC_ENV = '/home/jens/tractest/'
 GIT_PATH = '/usr/bin/git'
@@ -262,6 +263,12 @@ def handle_commit(commit, env):
 
             tn = TicketNotifyEmail(env)
             tn.notify(ticket, newticket=0, modtime=now)
+            
+            #dirty workaround for being able to save only one ticket/second, should be fixed in track 0.12 (1 ticket/microsecond)
+            #see also http://trac.edgewall.org/ticket/9993
+            time.sleep(1)
+            now = datetime.now(utc)
+
         except Exception, e:
             print 'Unexpected error while processing commit %s, for ticket ID %s: %s %s' % (commit, tkt_id, e.__class__,e)
 
