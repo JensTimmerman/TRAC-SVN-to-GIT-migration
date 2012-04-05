@@ -3,7 +3,7 @@ while read rev_old rev_new ref
 do
     #MALFORMED="$(git rev-list --oneline $rev_old..$rev_new --not $(git rev-list --all ^master) | egrep -v '#[0-9]+|Update repository templates' | awk '{print $1}' )"
     mergeregex="Merge branch 'master' of ssh://your\.domain\.com/"
-    mergeregex_non_master="Merge branch '.*' of .* into ([^m].*)|(m([^a].*))|(ma([^s].*))|(mas([^t].*))|(mast([^e].*))|(maste([^r].*))"
+    mergeregex_non_master="Merge branch '.*' .*into ([^m].*)|(m([^a].*))|(ma([^s].*))|(mas([^t].*))|(mast([^e].*))|(maste([^r].*))"
     MALFORMED="$(git rev-list --oneline --merges $rev_old..$rev_new | egrep -v "#[0-9]+|Update repository templates|$mergeregex|$mergeregex_non_master"| awk '{print $1}' )"
     if [ x"$MALFORMED" != x ]
     then
